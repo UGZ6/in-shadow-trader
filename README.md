@@ -4,182 +4,77 @@
     [/] 2. create strategy_handler.py
     [/] 3. create main.py
     [/] 4. create config.py and .env
-
-
-## 1. create data_handler.py
-เยี่ยมมาก! ตอนนี้เรามี `data_handler.py` ที่สมบูรณ์แล้ว
-
-ต่อไป ช่วยสร้างโค้ดสำหรับไฟล์ `strategy.py` ให้สมบูรณ์ โดยอ้างอิงจากโค้ดใน `@codebase` โดยเฉพาะฟังก์ชันจาก `data_handler.py`
-
-1.  **Import ที่จำเป็น:**
-    *   `import pandas as pd`
-    *   `from data_handler import calculate_indicators` (สมมติว่าเราจะใช้ฟังก์ชันนี้)
-
-2.  **สร้างฟังก์ชัน `find_recent_swing_high_low(df, lookback_period=100)`:**
-    *   **Goal:** เพื่อหาจุด Swing High และ Swing Low สำหรับคำนวณ Fibonacci.
-    *   **Logic:** รับ DataFrame เข้ามา, มองย้อนหลังไป `lookback_period` แท่งเทียน, หาค่าราคาสูงสุด (`high`) และค่าราคาต่ำสุด (`low`) ในช่วงเวลานั้น.
-    *   **Returns:** คืนค่า `(swing_high, swing_low)`.
-
-3.  **สร้างฟังก์ชัน `check_buy_condition(df)`:**
-    *   **Goal:** ตรวจสอบเงื่อนไขการเข้าซื้อจากข้อมูลล่าสุด.
-    *   **Logic:**
-        *   ดึงข้อมูลแถวล่าสุด (last_row) จาก DataFrame.
-        *   เรียกใช้ `find_recent_swing_high_low` เพื่อหาแนว Fibo.
-        *   คำนวณแนวรับ Fibonacci 0.5 และ 0.618.
-        *   **ใช้ Logic ที่เราเคยออกแบบไว้:**
-            *   EMA_12 > EMA_26 AND EMA_26 > EMA_50
-            *   AND MACD_12_26_9 > MACDh_12_26_9 (เส้น MACD > เส้น Signal)
-            *   AND RSI_14 < 68 (ให้มีพื้นที่วิ่งขึ้น)
-            *   AND ADX_14 > 25
-            *   AND ราคา `close` ปัจจุบันอยู่ระหว่างแนวรับ Fibo 0.5 และ 0.618
-    *   **Returns:** `True` ถ้าเงื่อนไขครบ, `False` ถ้าไม่.
-
-4.  **สร้างฟังก์ชัน `check_sell_condition(df, entry_price)`:**
-    *   **Goal:** ตรวจสอบเงื่อนไขการขาย.
-    *   **Logic:**
-        *   ดึงข้อมูลแถวล่าสุด (last_row).
-        *   **ใช้ Logic การขาย:**
-            *   EMA_12 < EMA_26
-            *   OR MACD_12_26_9 < MACDh_12_26_9
-            *   OR ราคา `close` <= `entry_price` * 0.97 (Stop Loss 3%)
-    *   **Returns:** `True` ถ้าเงื่อนไขข้อใดข้อหนึ่งจริง, `False` ถ้าไม่.
-
-ช่วยเขียนโค้ดทั้งหมดสำหรับไฟล์ `strategy.py` พร้อม Docstrings และ Comments ตามกฎใน `.claude.md` ด้วย
+    [/] 5. แก้ไข main.py เพื่อเชื่อมต่อ Exchange
+    [/] 6. สร้างระบบ Backtesting
 
 ---
 
-## 2. create strategy_handler.py
-เยี่ยมมาก! ตอนนี้เรามี `data_handler.py` ที่สมบูรณ์แล้ว
+## 6. สร้างระบบ Backtesting
+สวัสดี, เราจะเริ่มทำ Task 3.1(TODO.md): สร้างระบบ Backtesting
 
-ต่อไป ช่วยสร้างโค้ดสำหรับไฟล์ `strategy.py` ให้สมบูรณ์ โดยอ้างอิงจากโค้ดใน `@codebase` โดยเฉพาะฟังก์ชันจาก `data_handler.py`
+ช่วยสร้างโค้ดสำหรับไฟล์ `backtest.py` เพื่อทดสอบประสิทธิภาพของกลยุทธ์การเทรดของเรากับข้อมูลในอดีต โดยใช้โมดูลที่เรามีอยู่แล้วใน `@codebase`
 
-1.  **Import ที่จำเป็น:**
-    *   `import pandas as pd`
-    *   `from data_handler import calculate_indicators` (สมมติว่าเราจะใช้ฟังก์ชันนี้)
-
-2.  **สร้างฟังก์ชัน `find_recent_swing_high_low(df, lookback_period=100)`:**
-    *   **Goal:** เพื่อหาจุด Swing High และ Swing Low สำหรับคำนวณ Fibonacci.
-    *   **Logic:** รับ DataFrame เข้ามา, มองย้อนหลังไป `lookback_period` แท่งเทียน, หาค่าราคาสูงสุด (`high`) และค่าราคาต่ำสุด (`low`) ในช่วงเวลานั้น.
-    *   **Returns:** คืนค่า `(swing_high, swing_low)`.
-
-3.  **สร้างฟังก์ชัน `check_buy_condition(df)`:**
-    *   **Goal:** ตรวจสอบเงื่อนไขการเข้าซื้อจากข้อมูลล่าสุด.
-    *   **Logic:**
-        *   ดึงข้อมูลแถวล่าสุด (last_row) จาก DataFrame.
-        *   เรียกใช้ `find_recent_swing_high_low` เพื่อหาแนว Fibo.
-        *   คำนวณแนวรับ Fibonacci 0.5 และ 0.618.
-        *   **ใช้ Logic ที่เราเคยออกแบบไว้:**
-            *   EMA_12 > EMA_26 AND EMA_26 > EMA_50
-            *   AND MACD_12_26_9 > MACDh_12_26_9 (เส้น MACD > เส้น Signal)
-            *   AND RSI_14 < 68 (ให้มีพื้นที่วิ่งขึ้น)
-            *   AND ADX_14 > 25
-            *   AND ราคา `close` ปัจจุบันอยู่ระหว่างแนวรับ Fibo 0.5 และ 0.618
-    *   **Returns:** `True` ถ้าเงื่อนไขครบ, `False` ถ้าไม่.
-
-4.  **สร้างฟังก์ชัน `check_sell_condition(df, entry_price)`:**
-    *   **Goal:** ตรวจสอบเงื่อนไขการขาย.
-    *   **Logic:**
-        *   ดึงข้อมูลแถวล่าสุด (last_row).
-        *   **ใช้ Logic การขาย:**
-            *   EMA_12 < EMA_26
-            *   OR MACD_12_26_9 < MACDh_12_26_9
-            *   OR ราคา `close` <= `entry_price` * 0.97 (Stop Loss 3%)
-    *   **Returns:** `True` ถ้าเงื่อนไขข้อใดข้อหนึ่งจริง, `False` ถ้าไม่.
-
-ช่วยเขียนโค้ดทั้งหมดสำหรับไฟล์ `strategy.py` พร้อม Docstrings และ Comments ตามกฎใน `.claude.md` ด้วย
-
----
-
-## 3. create main.py
-สุดยอดมาก! ตอนนี้เรามี `data_handler.py` และ `strategy.py` ที่สมบูรณ์แล้วใน `@codebase`
-
-ขั้นตอนสุดท้าย ให้ช่วยสร้างโค้ดสำหรับไฟล์ `main.py` เพื่อเป็นจุดศูนย์กลางในการรันบอททั้งหมด
+**โครงสร้างและ Logic ของไฟล์:**
 
 1.  **Import ที่จำเป็น:**
-    *   `time` (สำหรับหน่วงเวลาใน Loop)
-    *   `pandas as pd`
-    *   `from data_handler import get_historical_data, calculate_indicators`
-    *   `from strategy import check_buy_condition, check_sell_condition`
-    *   (อาจจะต้อง import `config` ด้วย ถ้าเราสร้างไฟล์ config)
+    - `pandas as pd`
+    - `config`
+    - `data_handler` (สำหรับ `get_historical_data` และ `calculate_indicators`)
+    - `strategy` (สำหรับ `check_buy_condition` และ `check_sell_condition`)
 
-2.  **กำหนดค่าเริ่มต้น (Initial Settings):**
-    *   `symbol = 'BTC/USDT'`
-    *   `timeframe = '1h'`
-    *   `in_position = False` (ตัวแปรสำหรับจัดการสถานะ เริ่มต้นที่ยังไม่มีของ)
-    *   `entry_price = 0` (ตัวแปรสำหรับเก็บราคาที่เข้าซื้อ)
+2.  **สร้างฟังก์ชัน `run_backtest(start_date_str)`:**
+    - รับ `start_date_str` (เช่น "1 year ago UTC", "2022-01-01T00:00:00Z") เพื่อกำหนดจุดเริ่มต้นของข้อมูล
+    - **Step 1: Load Historical Data**
+        - พิมพ์ข้อความ "Starting Backtest..."
+        - ใช้ `ccxt` เพื่อแปลง `start_date_str` เป็น timestamp
+        - ดึงข้อมูล OHLCV ทั้งหมดตั้งแต่ `start_date_str` จนถึงปัจจุบันสำหรับ `config.SYMBOL` และ `config.TIMEFRAME` (อาจจะต้องดึงมาทีละ 1000 แท่งแล้วต่อกัน)
+        - พิมพ์ข้อความบอกช่วงเวลาและจำนวนข้อมูลที่ได้มา
+    - **Step 2: Calculate Indicators**
+        - เรียก `calculate_indicators()` เพื่อคำนวณ Indicator ทั้งหมดสำหรับ DataFrame ชุดใหญ่นี้
+    - **Step 3: Simulation Loop**
+        - กำหนดตัวแปรเริ่มต้น:
+            - `in_position = False`
+            - `entry_price = 0`
+            - `trades = []` (List ว่างสำหรับเก็บผลการเทรด)
+            - `initial_balance = 1000.0` (เงินทุนเริ่มต้นจำลอง)
+            - `current_balance = initial_balance`
+        - วน Loop ผ่าน DataFrame ด้วย `for i in range(len(df)):`
+        - **ภายใน Loop:**
+            - สร้าง `current_df` ที่เป็นข้อมูลตั้งแต่เริ่มต้นจนถึงแถวที่ `i`
+            - **ถ้า `in_position` เป็น `False`:**
+                - เรียก `check_buy_condition(current_df)`
+                - ถ้าเป็น `True`:
+                    - `in_position = True`
+                    - `entry_price = current_df['close'].iloc[-1]`
+                    - บันทึกเวลาและราคาเข้า
+            - **ถ้า `in_position` เป็น `True`:**
+                - เรียก `check_sell_condition(current_df, entry_price)`
+                - ถ้าเป็น `True`:
+                    - `in_position = False`
+                    - `exit_price = current_df['close'].iloc[-1]`
+                    - คำนวณ P&L ของการเทรดนี้: `pnl_percent = ((exit_price - entry_price) / entry_price)`
+                    - อัปเดต `current_balance`
+                    - บันทึกการเทรด (entry_price, exit_price, pnl_percent) ลงใน List `trades`
+                    - รีเซ็ต `entry_price = 0`
+    - **Step 4: Generate Report**
+        - หลังจาก Loop จบ, เรียกฟังก์ชัน `generate_report(trades, initial_balance, current_balance)`
 
-3.  **สร้างฟังก์ชัน `run_bot()`:**
-    *   นี่คือฟังก์ชันหลักที่จะเป็น Loop การทำงานของบอท
-    *   ให้มีการพิมพ์ข้อความเริ่มต้น เช่น "Trading Bot is running..."
-    *   สร้าง Loop `while True:` เพื่อให้บอททำงานตลอดเวลา
-    *   **ภายใน Loop:**
-        *   **Step 1: Fetch Data:**
-            *   ใช้ `try...except` เพื่อดักจับข้อผิดพลาดในการเชื่อมต่อ API
-            *   เรียก `get_historical_data()` เพื่อดึงข้อมูลล่าสุด (เช่น 200 แท่งเทียน)
-            *   เรียก `calculate_indicators()` เพื่อเพิ่ม Indicator ลงใน DataFrame
-            *   พิมพ์ข้อความบอกสถานะ เช่น "Fetching new data..."
-        *   **Step 2: Check Conditions (Decision Making):**
-            *   **ถ้า `in_position` เป็น `False` (กำลังรอซื้อ):**
-                *   เรียก `check_buy_condition(df)`
-                *   ถ้าคืนค่าเป็น `True`:
-                    *   พิมพ์ข้อความ "BUY SIGNAL DETECTED! EXECUTING BUY ORDER."
-                    *   อัปเดต `in_position = True`
-                    *   บันทึกราคาเข้าซื้อ `entry_price = df['close'].iloc[-1]`
-            *   **ถ้า `in_position` เป็น `True` (กำลังถือของอยู่):**
-                *   เรียก `check_sell_condition(df, entry_price)`
-                *   ถ้าคืนค่าเป็น `True`:
-                    *   พิมพ์ข้อความ "SELL SIGNAL DETECTED! EXECUTING SELL ORDER."
-                    *   อัปเดต `in_position = False`
-                    *   รีเซ็ต `entry_price = 0`
-            *   **ถ้าไม่มีสัญญาณ:**
-                *   พิมพ์ข้อความ "No signal. Holding position." หรือ "No signal. Waiting for entry."
-        *   **Step 3: Wait:**
-            *   ใช้ `time.sleep(3600)` เพื่อให้บอทหยุดรอ 1 ชั่วโมง (สำหรับ timeframe '1h') ก่อนจะเริ่ม Loop รอบใหม่
+3.  **สร้างฟังก์ชัน `generate_report(trades, initial_balance, final_balance)`:**
+    - รับ List ของ `trades` และค่า balance
+    - **คำนวณสถิติ:**
+        - Total Trades
+        - Win Rate (จำนวนเทรดที่กำไร / Total Trades)
+        - Average Profit per trade
+        - Average Loss per trade
+        - Max Drawdown (ส่วนนี้อาจจะซับซ้อน อาจจะเริ่มจากการคำนวณง่ายๆ ก่อน)
+        - Total P&L Percentage
+    - **พิมพ์ Report:** แสดงผลสถิติทั้งหมดออกมาในรูปแบบที่อ่านง่าย
 
 4.  **ส่วน Entry Point ของโปรแกรม:**
-    *   ใช้ `if __name__ == "__main__":`
-    *   เรียกใช้ฟังก์ชัน `run_bot()`
+    - ใช้ `if __name__ == "__main__":`
+    - เรียก `run_backtest(start_date_str="1 year ago UTC")`
 
-ช่วยเขียนโค้ดทั้งหมดสำหรับไฟล์ `main.py` ให้สมบูรณ์ตามนี้ และอย่าลืมใส่ Comments อธิบายในแต่ละขั้นตอนด้วย
-
----
-
-## 4. create config.py and .env
-ยอดเยี่ยมมาก! เราจะทำให้โปรเจกต์ปลอดภัยโดยใช้ไฟล์ `.env`
-
-ช่วยสร้างโค้ดสำหรับไฟล์ `config.py` ใหม่ทั้งหมด โดยมี Logic ดังนี้:
-
-1.  **Import ไลบรารีที่จำเป็น:**
-    - `os`
-    - `load_dotenv` จาก `dotenv`
-
-2.  **โหลดตัวแปรจากไฟล์ .env:**
-    - เรียกใช้ฟังก์ชัน `load_dotenv()` ทันทีหลังจาก import เพื่อให้ Python รู้จักตัวแปรในไฟล์ `.env`
-
-3.  **อ่าน API Keys จาก Environment Variables (ส่วนข้อมูลลับ):**
-    - `BINANCE_API_KEY = os.getenv('BINANCE_API_KEY')`
-    - `BINANCE_API_SECRET = os.getenv('BINANCE_API_SECRET')`
-    - เพิ่มการตรวจสอบว่า Key มีอยู่จริงหรือไม่ ถ้าไม่มีให้โปรแกรมหยุดทำงานและแจ้งเตือนผู้ใช้
-
-4.  **กำหนด Trading Parameters:**
-    - `SYMBOL = 'BTC/USDT'`
-    - `TIMEFRAME = '1h'`
-    - `TRADE_QUANTITY_USD = 15.0`
-    - `STOP_LOSS_PERCENT = 0.03`
-
-5.  **กำหนด Strategy Parameters:**
-    - `EMA_SHORT, EMA_MEDIUM, EMA_LONG = 12, 26, 50`
-    - `RSI_PERIOD = 14`
-    - `RSI_OVERBOUGHT = 70`
-    - `ADX_PERIOD = 14`
-    - `ADX_TREND_THRESHOLD = 25`
-    - `FIBO_LOOKBACK_PERIOD = 100`
-
-6.  **กำหนด Bot Operation Parameters:**
-    - `LOOP_INTERVAL_SECONDS = 3600`
-
-ช่วยเขียนโค้ดทั้งหมดให้สมบูรณ์ พร้อมคอมเมนต์อธิบายการทำงาน โดยเฉพาะส่วนที่อ่านค่าจาก `.env`
-
+ช่วยเขียนโค้ดทั้งหมดสำหรับไฟล์ `backtest.py` ให้สมบูรณ์ตามนี้
 
 
 

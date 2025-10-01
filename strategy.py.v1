@@ -1,9 +1,9 @@
 """
-Trading Strategy Module (v2 - Scoring System)
+Trading Strategy Module
 
 This module implements the core trading strategy logic for the Shadow Trader bot.
-It uses a flexible scoring system to evaluate buy conditions, making it more
-adaptable to various market conditions instead of a rigid all-or-nothing approach.
+Contains functions for identifying swing highs/lows, calculating Fibonacci levels,
+and determining buy/sell conditions based on technical analysis.
 
 The strategy uses:
 - EMA (12, 26, 50) for trend direction
@@ -12,58 +12,91 @@ The strategy uses:
 - ADX for trend strength
 - Fibonacci retracements (0.5, 0.618) for entry levels
 
+Required dependencies:
+    pip install pandas
+
 Author: Trading Bot
 Created: 2025-10-01
-Modified: 2025-10-02 (Implemented Scoring System)
 """
 
 import pandas as pd
 import logging
 from typing import Tuple, Optional
-# เราจะ import config เพื่อใช้ค่า Threshold จากที่เดียว
-import config
+from data_handler import calculate_indicators
 
 # Configure logging
-# logging.basicConfig(level=logging.INFO) # ลบบรรทัดนี้ออก เพราะเราจะ config logging ที่ backtest.py หรือ main.py ที่เดียว
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 def find_recent_swing_high_low(df: pd.DataFrame, lookback_period: int = 100) -> Tuple[Optional[float], Optional[float]]:
     """
     Find the recent swing high and swing low points for Fibonacci calculations.
-    (โค้ดส่วนนี้เหมือนเดิม ไม่มีการเปลี่ยนแปลง)
+
+    This function analyzes the historical price data within a specified lookback period
+    to identify the highest and lowest price points, which are used as reference levels
+    for calculating Fibonacci retracement levels.
+
+    Args:
+        df (pd.DataFrame): DataFrame with OHLCV data containing 'high' and 'low' columns
+        lookback_period (int, optional): Number of candles to look back. Defaults to 100.
+
+    Returns:
+        Tuple[Optional[float], Optional[float]]: A tuple containing (swing_high, swing_low)
+            - swing_high (float): The highest 'high' price in the lookback period
+            - swing_low (float): The lowest 'low' price in the lookback period
+            - Returns (None, None) if insufficient data or error occurs
+
+    Raises:
+        ValueError: If DataFrame is invalid or missing required columns
+        Exception: If unexpected error occurs during calculation
     """
     try:
+        # Validate input DataFrame
         if df is None or df.empty:
-            # logger.error("DataFrame is empty or None") # เปลี่ยนเป็น warning เพราะอาจเกิดขึ้นได้ปกติ
+            logger.error("DataFrame is empty or None")
             return None, None
 
+        # Check for required columns
         required_columns = ['high', 'low']
-        if not all(col in df.columns for col in required_columns):
-            raise ValueError(f"Missing required columns for swing analysis: {required_columns}")
+        missing_columns = [col for col in required_columns if col not in df.columns]
 
+        if missing_columns:
+            raise ValueError(f"Missing required columns for swing analysis: {missing_columns}")
+
+        # Check if we have enough data
         if len(df) < lookback_period:
+            logger.warning(f"Insufficient data for swing analysis. Got {len(df)} rows, requested {lookback_period}")
+            # Use all available data if we have less than requested
             actual_lookback = len(df)
         else:
             actual_lookback = lookback_period
 
+        # Get the most recent data for the lookback period
         recent_data = df.tail(actual_lookback)
+
+        # Find swing high (maximum high price) and swing low (minimum low price)
         swing_high = float(recent_data['high'].max())
         swing_low = float(recent_data['low'].min())
 
+        # Validate that we found valid swing levels
         if pd.isna(swing_high) or pd.isna(swing_low):
-            logger.warning("Found NaN values in swing high/low calculation")
+            logger.error("Found NaN values in swing high/low calculation")
             return None, None
 
+        # Ensure swing high is actually higher than swing low
         if swing_high <= swing_low:
-            # logger.error(f"Invalid swing levels: high ({swing_high}) <= low ({swing_low})") # เปลี่ยนเป็น warning
+            logger.error(f"Invalid swing levels: high ({swing_high}) <= low ({swing_low})")
             return None, None
 
-        # logger.info(f"Found swing levels over {actual_lookback} periods: High={swing_high:.6f}, Low={swing_low:.6f}")
-        # logger.info(f"Swing range: {swing_high - swing_low:.6f} ({((swing_high - swing_low) / swing_low * 100):.2f}%)")
+        logger.info(f"Found swing levels over {actual_lookback} periods: High={swing_high:.6f}, Low={swing_low:.6f}")
+        logger.info(f"Swing range: {swing_high - swing_low:.6f} ({((swing_high - swing_low) / swing_low * 100):.2f}%)")
 
         return swing_high, swing_low
 
+    except ValueError as e:
+        logger.error(f"Invalid DataFrame for swing analysis: {str(e)}")
+        return None, None
     except Exception as e:
         logger.error(f"Unexpected error during swing high/low calculation: {str(e)}")
         return None, None
@@ -71,41 +104,44 @@ def find_recent_swing_high_low(df: pd.DataFrame, lookback_period: int = 100) -> 
 
 def check_buy_condition(df: pd.DataFrame) -> bool:
     """
-    Check if current market conditions meet the buy entry criteria using a SCORING SYSTEM.
+    Check if current market conditions meet the buy entry criteria.
 
-    This function evaluates multiple technical indicators and assigns a score.
-    A buy signal is generated if the total score meets or exceeds a defined threshold.
+    This function evaluates multiple technical indicators to determine if it's
+    an appropriate time to enter a long position. The strategy requires:
 
-    Scoring:
-    - EMA Trend Bullish: +2 points
-    - MACD Bullish: +1 point
-    - RSI Not Overbought: +1 point
-    - ADX Strong Trend: +1 point
-    - Fibonacci Support Zone: +2 points (High value entry)
+    1. Trend Alignment: EMA_12 > EMA_26 > EMA_50 (bullish trend)
+    2. Momentum: MACD line > Signal line (bullish momentum)
+    3. Momentum Room: RSI < 68 (not overbought, room to move up)
+    4. Trend Strength: ADX > 25 (strong trend present)
+    5. Entry Level: Price between Fibonacci 0.5 and 0.618 support levels
 
     Args:
         df (pd.DataFrame): DataFrame with OHLCV data and calculated technical indicators
 
     Returns:
-        bool: True if the total score meets the threshold, False otherwise
+        bool: True if all buy conditions are met, False otherwise
+
+    Raises:
+        ValueError: If DataFrame is invalid or missing required indicators
+        Exception: If unexpected error occurs during condition checking
     """
     try:
-        if df is None or len(df) < 2:
+        # Validate input DataFrame
+        if df is None or df.empty:
+            logger.error("DataFrame is empty or None for buy condition check")
             return False
 
+        # Check for required indicator columns
         required_indicators = ['ema_12', 'ema_26', 'ema_50', 'macd', 'macd_signal', 'rsi', 'adx', 'close']
-        if not all(col in df.columns for col in required_indicators):
-            logger.warning(f"Missing required indicators for buy analysis. Skipping.")
-            return False
+        missing_indicators = [col for col in required_indicators if col not in df.columns]
 
+        if missing_indicators:
+            raise ValueError(f"Missing required indicators for buy analysis: {missing_indicators}")
+
+        # Get the latest market data (most recent candle)
         last_row = df.iloc[-1]
-        critical_values = [last_row[col] for col in required_indicators]
-        if any(pd.isna(value) for value in critical_values):
-            return False
 
-        # ================================================================
-        # 1. EXTRACT INDICATOR VALUES
-        # ================================================================
+        # Extract current values for all indicators
         current_close = last_row['close']
         ema_12 = last_row['ema_12']
         ema_26 = last_row['ema_26']
@@ -115,48 +151,75 @@ def check_buy_condition(df: pd.DataFrame) -> bool:
         rsi = last_row['rsi']
         adx = last_row['adx']
 
-        # ================================================================
-        # 2. EVALUATE INDIVIDUAL CONDITIONS
-        # ================================================================
+        # Check for NaN values in critical indicators
+        critical_values = [current_close, ema_12, ema_26, ema_50, macd, macd_signal, rsi, adx]
+        if any(pd.isna(value) for value in critical_values):
+            logger.warning("Found NaN values in critical indicators, cannot evaluate buy condition")
+            return False
+
+        logger.info(f"Evaluating buy conditions for price: {current_close:.6f}")
+        logger.info(f"EMA values - 12: {ema_12:.6f}, 26: {ema_26:.6f}, 50: {ema_50:.6f}")
+        logger.info(f"MACD: {macd:.6f}, Signal: {macd_signal:.6f}, RSI: {rsi:.2f}, ADX: {adx:.2f}")
+
+        # Condition 1: EMA Trend Alignment (EMA_12 > EMA_26 > EMA_50)
         ema_trend_bullish = (ema_12 > ema_26) and (ema_26 > ema_50)
+        logger.info(f"EMA trend bullish: {ema_trend_bullish}")
+
+        # Condition 2: MACD Momentum (MACD line > Signal line)
         macd_bullish = macd > macd_signal
-        rsi_ok = rsi < config.RSI_OVERBOUGHT
-        adx_strong = adx > config.ADX_TREND_THRESHOLD
+        logger.info(f"MACD bullish: {macd_bullish}")
 
-        swing_high, swing_low = find_recent_swing_high_low(df, config.FIBO_LOOKBACK_PERIOD)
-        fibo_support = False
+        # Condition 3: RSI room to move up (RSI < 68)
+        rsi_condition = rsi < 68
+        logger.info(f"RSI has room to move up (< 68): {rsi_condition}")
+
+        # Condition 4: Strong trend (ADX > 25)
+        adx_strong = adx > 25
+        logger.info(f"ADX shows strong trend (> 25): {adx_strong}")
+
+        # Condition 5: Price within Fibonacci support levels (0.5 to 0.618)
+        swing_high, swing_low = find_recent_swing_high_low(df)
+
+        fibonacci_condition = False
         if swing_high is not None and swing_low is not None:
+            # Calculate Fibonacci retracement levels
             price_range = swing_high - swing_low
-            fib_50_level = swing_high - (price_range * 0.5)
-            fib_618_level = swing_high - (price_range * 0.618)
-            fibo_support = fib_618_level <= current_close <= fib_50_level
+            fib_50_level = swing_high - (price_range * 0.5)    # 50% retracement
+            fib_618_level = swing_high - (price_range * 0.618) # 61.8% retracement
 
-        # ================================================================
-        # 3. CALCULATE SCORE
-        # ================================================================
-        score = 0
-        if ema_trend_bullish: score += 2
-        if macd_bullish: score += 1
-        if rsi_ok: score += 1
-        if adx_strong: score += 1
-        if fibo_support: score += 2
+            logger.info(f"Fibonacci levels - 50%: {fib_50_level:.6f}, 61.8%: {fib_618_level:.6f}")
 
-        # ================================================================
-        # 4. FINAL DECISION
-        # ================================================================
-        buy_signal = score >= config.BUY_SCORE_THRESHOLD
+            # Price should be between 61.8% (lower) and 50% (higher) retracement levels
+            # This indicates price is in a support zone after a retracement
+            fibonacci_condition = fib_618_level <= current_close <= fib_50_level
+            logger.info(f"Price in Fibonacci support zone (61.8% to 50%): {fibonacci_condition}")
+        else:
+            logger.warning("Could not calculate Fibonacci levels, skipping this condition")
 
-        # ================================================================
-        # 5. LOGGING (Only log if it's a potential signal or for debugging)
-        # ================================================================
-        # เราจะลดการ log ลง เพื่อไม่ให้ log เยอะเกินไปตอน backtest
-        if buy_signal or score > 2: # Log เฉพาะเมื่อมีคะแนนน่าสนใจหรือเกิดสัญญาณซื้อ
-            logger.info(f"--- Buy Check at Price ${current_close:.2f} ---")
-            logger.info(f"  - Score: {score}/{config.BUY_SCORE_THRESHOLD} -> {'BUY' if buy_signal else 'HOLD'}")
-            logger.info(f"  - Conditions: EMA={ema_trend_bullish}(+2), MACD={macd_bullish}(+1), RSI={rsi_ok}(+1), ADX={adx_strong}(+1), Fibo={fibo_support}(+2)")
+        # Combine all conditions
+        all_conditions = [
+            ema_trend_bullish,
+            macd_bullish,
+            rsi_condition,
+            adx_strong,
+            fibonacci_condition
+        ]
+
+        buy_signal = all(all_conditions)
+
+        logger.info(f"Buy condition summary:")
+        logger.info(f"  EMA Trend Bullish: {ema_trend_bullish}")
+        logger.info(f"  MACD Bullish: {macd_bullish}")
+        logger.info(f"  RSI Room to Move: {rsi_condition}")
+        logger.info(f"  ADX Strong Trend: {adx_strong}")
+        logger.info(f"  Fibonacci Support: {fibonacci_condition}")
+        logger.info(f"  FINAL BUY SIGNAL: {buy_signal}")
 
         return buy_signal
 
+    except ValueError as e:
+        logger.error(f"Invalid DataFrame for buy condition analysis: {str(e)}")
+        return False
     except Exception as e:
         logger.error(f"Unexpected error during buy condition check: {str(e)}")
         return False
@@ -165,53 +228,109 @@ def check_buy_condition(df: pd.DataFrame) -> bool:
 def check_sell_condition(df: pd.DataFrame, entry_price: float) -> bool:
     """
     Check if current market conditions meet the sell exit criteria.
-    (โค้ดส่วนนี้เหมือนเดิม แต่จะดึงค่า Stop Loss จาก config)
+
+    This function evaluates sell conditions to determine when to exit a long position.
+    The strategy will sell if ANY of the following conditions are met:
+
+    1. Trend Reversal: EMA_12 < EMA_26 (short-term trend turns bearish)
+    2. Momentum Loss: MACD line < Signal line (momentum turns bearish)
+    3. Stop Loss: Current price <= entry_price * 0.97 (3% stop loss)
+
+    Args:
+        df (pd.DataFrame): DataFrame with OHLCV data and calculated technical indicators
+        entry_price (float): The price at which the position was entered
+
+    Returns:
+        bool: True if any sell condition is met, False otherwise
+
+    Raises:
+        ValueError: If DataFrame is invalid, missing indicators, or invalid entry_price
+        Exception: If unexpected error occurs during condition checking
     """
     try:
-        if df is None or df.empty or entry_price <= 0:
+        # Validate inputs
+        if df is None or df.empty:
+            logger.error("DataFrame is empty or None for sell condition check")
             return False
 
+        if entry_price <= 0:
+            raise ValueError(f"Invalid entry price: {entry_price}")
+
+        # Check for required indicator columns
         required_indicators = ['ema_12', 'ema_26', 'macd', 'macd_signal', 'close']
-        if not all(col in df.columns for col in required_indicators):
-            logger.warning("Missing required indicators for sell analysis. Skipping.")
-            return False
+        missing_indicators = [col for col in required_indicators if col not in df.columns]
 
+        if missing_indicators:
+            raise ValueError(f"Missing required indicators for sell analysis: {missing_indicators}")
+
+        # Get the latest market data (most recent candle)
         last_row = df.iloc[-1]
-        critical_values = [last_row[col] for col in required_indicators]
-        if any(pd.isna(value) for value in critical_values):
-            return False
 
+        # Extract current values for all indicators
         current_close = last_row['close']
         ema_12 = last_row['ema_12']
         ema_26 = last_row['ema_26']
         macd = last_row['macd']
         macd_signal = last_row['macd_signal']
 
+        # Check for NaN values in critical indicators
+        critical_values = [current_close, ema_12, ema_26, macd, macd_signal]
+        if any(pd.isna(value) for value in critical_values):
+            logger.warning("Found NaN values in critical indicators, cannot evaluate sell condition")
+            return False
+
+        logger.info(f"Evaluating sell conditions for current price: {current_close:.6f}")
+        logger.info(f"Entry price: {entry_price:.6f}")
+        logger.info(f"EMA values - 12: {ema_12:.6f}, 26: {ema_26:.6f}")
+        logger.info(f"MACD: {macd:.6f}, Signal: {macd_signal:.6f}")
+
         # Condition 1: Trend Reversal (EMA_12 < EMA_26)
         trend_reversal = ema_12 < ema_26
+        logger.info(f"Trend reversal detected (EMA_12 < EMA_26): {trend_reversal}")
 
         # Condition 2: Momentum Loss (MACD < Signal)
         momentum_loss = macd < macd_signal
+        logger.info(f"Momentum loss detected (MACD < Signal): {momentum_loss}")
 
-        # Condition 3: Stop Loss (from config)
-        stop_loss_price = entry_price * (1 - config.STOP_LOSS_PERCENT)
+        # Condition 3: Stop Loss (3% below entry price)
+        stop_loss_price = entry_price * 0.97
         stop_loss_triggered = current_close <= stop_loss_price
 
-        sell_signal = any([trend_reversal, momentum_loss, stop_loss_triggered])
+        current_pnl_percent = ((current_close - entry_price) / entry_price) * 100
+        logger.info(f"Stop loss price: {stop_loss_price:.6f}")
+        logger.info(f"Current P&L: {current_pnl_percent:.2f}%")
+        logger.info(f"Stop loss triggered: {stop_loss_triggered}")
 
+        # Check if any sell condition is met (OR logic)
+        sell_conditions = [trend_reversal, momentum_loss, stop_loss_triggered]
+        sell_signal = any(sell_conditions)
+
+        logger.info(f"Sell condition summary:")
+        logger.info(f"  Trend Reversal: {trend_reversal}")
+        logger.info(f"  Momentum Loss: {momentum_loss}")
+        logger.info(f"  Stop Loss Triggered: {stop_loss_triggered}")
+        logger.info(f"  FINAL SELL SIGNAL: {sell_signal}")
+
+        # Log the reason for selling if signal is True
         if sell_signal:
             reasons = []
-            if trend_reversal: reasons.append("Trend Reversal")
-            if momentum_loss: reasons.append("Momentum Loss")
-            if stop_loss_triggered: reasons.append(f"Stop Loss at ${stop_loss_price:.2f}")
-            logger.info(f"--- Sell Signal at Price ${current_close:.2f} ---")
-            logger.info(f"  - Reasons: {', '.join(reasons)}")
+            if trend_reversal:
+                reasons.append("Trend Reversal")
+            if momentum_loss:
+                reasons.append("Momentum Loss")
+            if stop_loss_triggered:
+                reasons.append("Stop Loss")
+            logger.info(f"Sell signal triggered due to: {', '.join(reasons)}")
 
         return sell_signal
 
+    except ValueError as e:
+        logger.error(f"Invalid input for sell condition analysis: {str(e)}")
+        return False
     except Exception as e:
         logger.error(f"Unexpected error during sell condition check: {str(e)}")
         return False
+
 
 def calculate_fibonacci_levels(swing_high: float, swing_low: float) -> dict:
     """
