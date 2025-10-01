@@ -81,6 +81,7 @@ target/
 # IPython
 profile_default/
 ipython_config.py
+config.py
 
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is
@@ -120,7 +121,8 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
+*.env
+.env*
 .venv
 env/
 venv/
@@ -181,3 +183,10 @@ backtest_results/
 temp/
 tmp/
 *.tmp
+
+# Vibes specific
+.rulebook-ai/
+.cursor/
+.claude/
+.roo/
+assets/
