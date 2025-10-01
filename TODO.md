@@ -1,6 +1,6 @@
 # Project To-Do List: in-shadow-trader
 นี่คือรายการสิ่งที่ต้องทำทั้งหมด แบ่งตามเฟสการพัฒนา ตั้งแต่เริ่มต้นจนถึงการนำไปใช้งานจริง
-## Phase 1: Foundation & Setup (รากฐานและการตั้งค่า) - 95% Done
+## Phase 1: Foundation & Setup (รากฐานและการตั้งค่า) - 100% Done
     1.1: Initialize Project & Git Repo: สร้างโปรเจกต์และ GitHub Repository
     1.2: Define AI Coding Rules: สร้างไฟล์ .claude.md เพื่อควบคุมสไตล์และกฎการเขียนโค้ดของ AI
     1.3: Secure Secret Management: สร้างไฟล์ .env และ .gitignore เพื่อจัดการ API    Keys อย่างปลอดภัย
