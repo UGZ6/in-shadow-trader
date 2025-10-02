@@ -1,19 +1,5 @@
-"""
-Data Handler Module for Trading Bot
-
-This module provides functions to fetch historical market data from Binance
-and calculate technical indicators for trading analysis.
-
-Required dependencies:
-    pip install ccxt pandas pandas-ta
-
-Author: Trading Bot
-Created: 2025-10-01
-"""
-
-import ccxt
 import pandas as pd
-import pandas_ta as ta
+import pandas_ta_classic as ta
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
@@ -22,82 +8,60 @@ from typing import Optional, Dict, Any
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-def get_historical_data(symbol: str, timeframe: str, limit: int = 100) -> Optional[pd.DataFrame]:
+def get_historical_data_from_csv(file_path: str, chunksize: int = 100000) -> Optional[pd.DataFrame]:
     """
-    Fetch historical OHLCV data from Binance exchange.
+    Load historical OHLCV data from a CSV file in chunks to reduce memory usage.
 
     Args:
-        symbol (str): Trading pair symbol (e.g., 'BTC/USDT', 'ETH/USDT')
-        timeframe (str): Timeframe for data (e.g., '1m', '5m', '15m', '1h', '4h', '1d')
-        limit (int): Number of candles to fetch (default: 100, max: 1000)
+        file_path (str): Path to the CSV file.
+        chunksize (int): Number of rows to read at a time.
 
     Returns:
-        pd.DataFrame: DataFrame with columns ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-        None: If error occurs during data fetching
-
-    Raises:
-        Exception: If connection to exchange fails or invalid parameters provided
+        pd.DataFrame: DataFrame with columns ["timestamp", "open", "high", "low", "close", "volume"]
+        None: If error occurs during data loading or file not found.
     """
     try:
-        # Initialize Binance exchange (using public endpoints, no API keys needed for OHLCV data)
-        exchange = ccxt.binance({
-            'sandbox': False,  # Set to True for testnet
-            'rateLimit': 1200,
-            'enableRateLimit': True,
-        })
+        logger.info(f"Loading historical data from CSV: {file_path} in chunks of {chunksize}")
+        
+        chunks = []
+        for chunk in pd.read_csv(file_path, header=None, names=["timestamp", "open", "high", "low", "close", "volume"], chunksize=chunksize):
+            # Convert timestamp to datetime and set as index
+            # Convert timestamp to datetime, assuming Unix timestamp in seconds
+            # Use errors='coerce' to turn unparseable dates into NaT (Not a Time)
+            chunk["timestamp"] = pd.to_datetime(chunk["timestamp"], unit="s", errors="coerce")
+            chunk.set_index("timestamp", inplace=True)
 
-        # Validate inputs
-        if not symbol or not timeframe:
-            raise ValueError("Symbol and timeframe must be provided")
+            # Ensure numeric data types and handle missing values
+            numeric_columns = ["open", "high", "low", "close", "volume"]
+            for col in numeric_columns:
+                if col not in chunk.columns:
+                    logger.error(f"Missing required column in CSV chunk: {col}")
+                    return None
+                chunk[col] = pd.to_numeric(chunk[col], errors="coerce")
 
-        if limit <= 0 or limit > 1000:
-            raise ValueError("Limit must be between 1 and 1000")
-
-        logger.info(f"Fetching {limit} candles for {symbol} on {timeframe} timeframe")
-
-        # Fetch OHLCV data
-        # Returns: [[timestamp, open, high, low, close, volume], ...]
-        ohlcv_data = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
-
-        if not ohlcv_data:
-            logger.warning(f"No data received for {symbol}")
+            chunk.dropna(subset=numeric_columns, inplace=True)
+            chunks.append(chunk)
+        
+        if not chunks:
+            logger.error("No data loaded from CSV chunks.")
             return None
 
-        # Convert to DataFrame
-        df = pd.DataFrame(ohlcv_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-
-        # Convert timestamp to datetime
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-
-        # Ensure numeric data types
-        numeric_columns = ['open', 'high', 'low', 'close', 'volume']
-        df[numeric_columns] = df[numeric_columns].astype(float)
-
-        # Set timestamp as index for technical analysis
-        df.set_index('timestamp', inplace=True)
+        df = pd.concat(chunks)
 
         # Sort by timestamp to ensure chronological order
         df.sort_index(inplace=True)
 
-        logger.info(f"Successfully fetched {len(df)} candles for {symbol}")
+        logger.info(f"Successfully loaded {len(df)} candles from CSV.")
         logger.info(f"Data range: {df.index[0]} to {df.index[-1]}")
 
         return df
 
-    except ccxt.NetworkError as e:
-        logger.error(f"Network error while fetching data for {symbol}: {str(e)}")
-        return None
-    except ccxt.ExchangeError as e:
-        logger.error(f"Exchange error while fetching data for {symbol}: {str(e)}")
-        return None
-    except ValueError as e:
-        logger.error(f"Invalid parameters: {str(e)}")
+    except FileNotFoundError:
+        logger.error(f"CSV file not found at {file_path}")
         return None
     except Exception as e:
-        logger.error(f"Unexpected error while fetching data for {symbol}: {str(e)}")
+        logger.error(f"Error loading data from CSV: {str(e)}")
         return None
-
 
 def calculate_indicators(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     """
@@ -110,14 +74,14 @@ def calculate_indicators(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     - ADX (Average Directional Index): 14 periods
 
     Args:
-        df (pd.DataFrame): DataFrame with OHLCV data (must have 'open', 'high', 'low', 'close', 'volume')
+        df (pd.DataFrame): DataFrame with OHLCV data (must have "open", "high", "low", "close", "volume")
 
     Returns:
         pd.DataFrame: Original DataFrame with additional indicator columns
-        None: If error occurs during indicator calculation
+        None: If error occurs during indicator calculation.
 
     Raises:
-        Exception: If DataFrame is invalid or indicator calculation fails
+        Exception: If DataFrame is invalid or indicator calculation fails.
     """
     try:
         # Validate input DataFrame
@@ -125,7 +89,7 @@ def calculate_indicators(df: pd.DataFrame) -> Optional[pd.DataFrame]:
             logger.error("DataFrame is empty or None")
             return None
 
-        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        required_columns = ["open", "high", "low", "close", "volume"]
         missing_columns = [col for col in required_columns if col not in df.columns]
 
         if missing_columns:
@@ -140,51 +104,75 @@ def calculate_indicators(df: pd.DataFrame) -> Optional[pd.DataFrame]:
 
         logger.info("Calculating technical indicators...")
 
-        # 1. Calculate EMAs (Exponential Moving Averages)
+        # 1. Calculate EMAs (Exponential Moving Average)
         logger.info("Calculating EMA indicators...")
-        df_with_indicators['ema_12'] = ta.ema(df_with_indicators['close'], length=12)
-        df_with_indicators['ema_26'] = ta.ema(df_with_indicators['close'], length=26)
-        df_with_indicators['ema_50'] = ta.ema(df_with_indicators['close'], length=50)
+        df_with_indicators["ema_12"] = ta.ema(df_with_indicators["close"], length=12)
+        df_with_indicators["ema_26"] = ta.ema(df_with_indicators["close"], length=26)
+        df_with_indicators["ema_50"] = ta.ema(df_with_indicators["close"], length=50)
 
         # 2. Calculate MACD (Moving Average Convergence Divergence)
         logger.info("Calculating MACD indicator...")
-        macd_data = ta.macd(df_with_indicators['close'], fast=12, slow=26, signal=9)
+        macd_data = ta.macd(df_with_indicators["close"], fast=12, slow=26, signal=9)
         if macd_data is not None:
-            df_with_indicators['macd'] = macd_data['MACD_12_26_9']
-            df_with_indicators['macd_signal'] = macd_data['MACDs_12_26_9']
-            df_with_indicators['macd_histogram'] = macd_data['MACDh_12_26_9']
+            df_with_indicators["macd"] = macd_data["MACD_12_26_9"]
+            df_with_indicators["macd_signal"] = macd_data["MACDs_12_26_9"]
+            df_with_indicators["macd_histogram"] = macd_data["MACDh_12_26_9"]
         else:
             logger.warning("MACD calculation failed")
 
         # 3. Calculate RSI (Relative Strength Index)
         logger.info("Calculating RSI indicator...")
-        df_with_indicators['rsi'] = ta.rsi(df_with_indicators['close'], length=14)
+        df_with_indicators["rsi"] = ta.rsi(df_with_indicators["close"], length=14)
 
         # 4. Calculate ADX (Average Directional Index)
         logger.info("Calculating ADX indicator...")
         adx_data = ta.adx(
-            high=df_with_indicators['high'],
-            low=df_with_indicators['low'],
-            close=df_with_indicators['close'],
+            high=df_with_indicators["high"],
+            low=df_with_indicators["low"],
+            close=df_with_indicators["close"],
             length=14
         )
         if adx_data is not None:
-            df_with_indicators['adx'] = adx_data['ADX_14']
-            df_with_indicators['di_plus'] = adx_data['DMP_14']  # Directional Movement Plus
-            df_with_indicators['di_minus'] = adx_data['DMN_14']  # Directional Movement Minus
+            df_with_indicators["adx"] = adx_data["ADX_14"]
+            df_with_indicators["di_plus"] = adx_data["DMP_14"]  # Directional Movement Plus
+            df_with_indicators["di_minus"] = adx_data["DMN_14"]  # Directional Movement Minus
         else:
             logger.warning("ADX calculation failed")
 
+        # 5. Volatility Analysis (e.g., Average True Range - ATR)
+        logger.info("Calculating ATR indicator...")
+        atr_data = ta.atr(
+            high=df_with_indicators["high"],
+            low=df_with_indicators["low"],
+            close=df_with_indicators["close"],
+            length=14
+        )
+        if atr_data is not None:
+            df_with_indicators["atr"] = atr_data
+        else:
+            logger.warning("ATR calculation failed")
+
+        # 6. Trend Strength (e.g., Aroon Oscillator)
+        logger.info("Calculating Aroon Oscillator indicator...")
+        aroon_data = ta.aroon(high=df_with_indicators["high"], low=df_with_indicators["low"], length=14)
+        if aroon_data is not None:
+            df_with_indicators["aroon_down"] = aroon_data["AROOND_14"]
+            df_with_indicators["aroon_up"] = aroon_data["AROONU_14"]
+            df_with_indicators["aroon_oscillator"] = aroon_data["AROONOSC_14"]
+        else:
+            logger.warning("Aroon Oscillator calculation failed")
+
         # Add some additional useful columns for analysis
-        df_with_indicators['price_change'] = df_with_indicators['close'].pct_change()
-        df_with_indicators['volume_sma_20'] = ta.sma(df_with_indicators['volume'], length=20)
-        df_with_indicators['volume_ratio'] = df_with_indicators['volume'] / df_with_indicators['volume_sma_20']
+        df_with_indicators["price_change"] = df_with_indicators["close"].pct_change()
+        df_with_indicators["volume_sma_20"] = ta.sma(df_with_indicators["volume"], length=20)
+        df_with_indicators["volume_ratio"] = df_with_indicators["volume"] / df_with_indicators["volume_sma_20"]
 
         # Log indicator summary
         indicator_columns = [
-            'ema_12', 'ema_26', 'ema_50',
-            'macd', 'macd_signal', 'macd_histogram',
-            'rsi', 'adx', 'di_plus', 'di_minus'
+            "ema_12", "ema_26", "ema_50",
+            "macd", "macd_signal", "macd_histogram",
+            "rsi", "adx", "di_plus", "di_minus",
+            "atr", "aroon_down", "aroon_up", "aroon_oscillator"
         ]
 
         calculated_indicators = [col for col in indicator_columns if col in df_with_indicators.columns]
@@ -193,7 +181,7 @@ def calculate_indicators(df: pd.DataFrame) -> Optional[pd.DataFrame]:
         # Check for any indicators with all NaN values
         for indicator in calculated_indicators:
             if df_with_indicators[indicator].isna().all():
-                logger.warning(f"Indicator '{indicator}' contains only NaN values")
+                logger.warning(f"Indicator \'{indicator}\' contains only NaN values")
 
         logger.info(f"DataFrame shape after adding indicators: {df_with_indicators.shape}")
 
@@ -207,77 +195,48 @@ def calculate_indicators(df: pd.DataFrame) -> Optional[pd.DataFrame]:
         return None
 
 
-def get_latest_price(symbol: str) -> Optional[float]:
-    """
-    Get the latest/current price for a trading pair.
-
-    Args:
-        symbol (str): Trading pair symbol (e.g., 'BTC/USDT')
-
-    Returns:
-        float: Current price of the symbol
-        None: If error occurs during price fetching
-    """
-    try:
-        exchange = ccxt.binance({
-            'sandbox': False,
-            'rateLimit': 1200,
-            'enableRateLimit': True,
-        })
-
-        ticker = exchange.fetch_ticker(symbol)
-        current_price = float(ticker['last'])
-
-        logger.info(f"Current price for {symbol}: {current_price}")
-        return current_price
-
-    except Exception as e:
-        logger.error(f"Error fetching current price for {symbol}: {str(e)}")
-        return None
-
-
 def validate_data_quality(df: pd.DataFrame) -> Dict[str, Any]:
     """
     Validate the quality of market data and indicators.
 
     Args:
-        df (pd.DataFrame): DataFrame with market data and indicators
+        df (pd.DataFrame): DataFrame with market data and indicators.
 
     Returns:
-        dict: Dictionary containing data quality metrics and warnings
+        dict: Dictionary containing data quality metrics and warnings.
     """
     try:
         quality_report = {
-            'total_rows': len(df),
-            'date_range': {
-                'start': str(df.index[0]) if not df.empty else None,
-                'end': str(df.index[-1]) if not df.empty else None
+            "total_rows": len(df),
+            "date_range": {
+                "start": str(df.index[0]) if not df.empty else None,
+                "end": str(df.index[-1]) if not df.empty else None
             },
-            'missing_data': {},
-            'warnings': []
+            "missing_data": {},
+            "warnings": []
         }
 
         # Check for missing data in each column
         for column in df.columns:
             nan_count = df[column].isna().sum()
             if nan_count > 0:
-                quality_report['missing_data'][column] = {
-                    'count': int(nan_count),
-                    'percentage': round((nan_count / len(df)) * 100, 2)
+                quality_report["missing_data"][column] = {
+                    "count": int(nan_count),
+                    "percentage": round((nan_count / len(df)) * 100, 2)
                 }
 
         # Add warnings for data quality issues
         if len(df) < 100:
-            quality_report['warnings'].append(f"Limited data: only {len(df)} rows available")
+            quality_report["warnings"].append(f"Limited data: only {len(df)} rows available")
 
-        if quality_report['missing_data']:
-            quality_report['warnings'].append("Missing data detected in some indicators")
+        if quality_report["missing_data"]:
+            quality_report["warnings"].append("Missing data detected in some indicators")
 
         return quality_report
 
     except Exception as e:
         logger.error(f"Error during data quality validation: {str(e)}")
-        return {'error': str(e)}
+        return {"error": str(e)}
 
 
 # Example usage and testing function
@@ -287,16 +246,14 @@ def main():
     This function demonstrates how to use the module.
     """
     try:
-        # Example: Fetch Bitcoin data
-        symbol = 'BTC/USDT'
-        timeframe = '1h'
-        limit = 200
+        # Example: Load Bitcoin data from CSV
+        csv_file_path = "/home/ubuntu/in-shadow-trader/data/data/btcusd_1-min_data.csv"
 
-        print(f"Fetching data for {symbol}...")
-        df = get_historical_data(symbol, timeframe, limit)
+        print(f"Loading data from {csv_file_path}...")
+        df = get_historical_data_from_csv(csv_file_path)
 
         if df is not None:
-            print(f"Successfully fetched {len(df)} candles")
+            print(f"Successfully loaded {len(df)} candles")
             print("\nData sample:")
             print(df.head())
 
@@ -306,24 +263,19 @@ def main():
             if df_with_indicators is not None:
                 print(f"Successfully calculated indicators")
                 print("\nData with indicators sample:")
-                print(df_with_indicators[['close', 'ema_12', 'ema_26', 'rsi', 'macd']].tail())
+                print(df_with_indicators[["close", "ema_12", "ema_26", "rsi", "macd"]].tail())
 
                 # Validate data quality
                 quality_report = validate_data_quality(df_with_indicators)
                 print(f"\nData quality report:")
-                print(f"Total rows: {quality_report.get('total_rows', 0)}")
-                print(f"Missing data columns: {list(quality_report.get('missing_data', {}).keys())}")
-                print(f"Warnings: {quality_report.get('warnings', [])}")
-
-                # Get current price
-                current_price = get_latest_price(symbol)
-                if current_price:
-                    print(f"\nCurrent {symbol} price: ${current_price:,.2f}")
+                print(f'Total rows: {quality_report.get("total_rows", 0)}')
+                print(f'Missing data columns: {list(quality_report.get("missing_data", {}).keys())}')
+                print(f'Warnings: {quality_report.get("warnings", [])}')
 
             else:
                 print("Failed to calculate indicators")
         else:
-            print("Failed to fetch data")
+            print("Failed to load data from CSV")
 
     except Exception as e:
         print(f"Error in main function: {str(e)}")
@@ -331,3 +283,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
