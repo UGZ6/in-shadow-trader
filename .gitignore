@@ -192,3 +192,4 @@ tmp/
 .roo/
 assets/
 .bak/
+venv/
